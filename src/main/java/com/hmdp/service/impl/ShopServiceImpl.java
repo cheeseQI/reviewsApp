@@ -1,5 +1,7 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.util.BooleanUtil;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.hmdp.dto.Result;
@@ -7,6 +9,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisConstants;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -25,23 +28,31 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IShopService {
     @Resource
-    StringRedisTemplate stringRedisTemplate;
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private CacheClient cacheClient;
+
     @Override
     public Result queryById(Long id) {
+        // 1. normal pass through
+        // this::getById is short for (ID) -> getById(ID)
+        // Shop shop = cacheClient.queryByIdWithoutCachePenetration(RedisConstants.CACHE_SHOP_KEY, id, Shop.class, this::getById, RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        // 2. consider hot key, using mutex
+        Shop shop = cacheClient.queryByIdByMutexWithoutCacheBreakdown(RedisConstants.CACHE_SHOP_KEY, id, Shop.class, this::getById, RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        // todo: logic expire can also be realized in the future
+        return shop == null ? Result.fail("shop does not exist!") : Result.ok(shop);
+    }
+
+    @Override
+    public Result update(Shop shop) {
+        Long id = shop.getId();
+        if (id == null) {
+            return Result.fail("can not find id");
+        }
         String key = RedisConstants.CACHE_SHOP_KEY + id;
-        // 1. try to get from cache
-        String shopJson = stringRedisTemplate.opsForValue().get(key);
-        if (shopJson != null) {
-            Shop shop = JSONUtil.toBean(shopJson, Shop.class);
-            return Result.ok(shop);
-        }
-        // 2. not in cache -> get from database
-        Shop shop = getById(id);
-        if (shop == null) {
-            return Result.fail("shop does not exist!");
-        }
-        // 3. store in cache
-        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop), RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
-        return Result.ok(shop);
+        updateById(shop);
+        stringRedisTemplate.delete(key);
+        return Result.ok();
     }
 }
