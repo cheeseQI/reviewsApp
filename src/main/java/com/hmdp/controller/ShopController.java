@@ -42,6 +42,7 @@ public class ShopController {
      * @return 商铺id
      */
     @PostMapping
+    @CrossOrigin(origins = "*", allowedHeaders = "*")
     public Result saveShop(@RequestBody Shop shop) {
         // 写入数据库
         shopService.save(shop);
@@ -67,6 +68,7 @@ public class ShopController {
      * @return 商铺列表
      */
     @GetMapping("/of/type")
+    @CrossOrigin(origins = "*", allowedHeaders = "*")
     public Result queryShopByType(
             @RequestParam("typeId") Integer typeId,
             @RequestParam(value = "current", defaultValue = "1") Integer current
